@@ -202,53 +202,74 @@ unsigned floatAbsVal(unsigned uf) {
  *   Max ops: 30
  *   Rating: 4
  */
+/* Fixed floatFloat2Int (conforms to Data Lab floating-point rules) */
+/* dlc-friendly floatFloat2Int */
 int floatFloat2Int(unsigned uf) {
-    unsigned exp = (uf >> 23) & 0xFF;
-    unsigned frac = uf & 0x7FFFFF;
-    unsigned sign = uf >> 31;
-    int E = exp - 127;
+    unsigned sign;
+    unsigned exp;
+    unsigned frac;
+    int E;
+    unsigned M;
+    unsigned uresult;
+    int result;
 
-    /* NaN or infinity */
-    if (exp == 0xFF) {
+    /* extract fields */
+    sign = uf >> 31;
+    exp  = (uf >> 23) & 0xFFu;
+    frac = uf & 0x7FFFFFu;
+
+    /* NaN or +/−Inf -> out of range */
+    if (exp == 0xFFu) {
         return 0x80000000u;
     }
 
-    /* value magnitude < 1 => rounds toward zero to 0 */
+    /* E = exponent - bias(127) */
+    E = exp - 127;
+
+    /* magnitude < 1 -> rounds to 0 */
     if (E < 0) {
         return 0;
     }
 
-    /* if exponent big enough to overflow any 32-bit int */
+    /* too large to represent in 32-bit int */
     if (E > 31) {
         return 0x80000000u;
     }
 
-    /* build significand: implicit 1 for normalized values */
-    unsigned M = (exp == 0) ? frac : (frac | 0x800000);
-
-    /* handle the special E == 31 case carefully */
-    if (E == 31) {
-        /* positive numbers with E==31 always overflow (>= 2^31) */
-        if (!sign) return 0x80000000u;
-        /* negative numbers fit only if value is exactly -2^31,
-           i.e., M must be exactly 1<<23 and frac==0 */
-        if (M != (1u << 23)) return 0x80000000u;
-        /* else it is exactly -2^31 and will be handled below */
+    /* significand: implicit 1 for normalized numbers */
+    M = frac;
+    if (exp != 0u) {
+        M = frac | 0x800000u;
     }
 
-    unsigned result;
-    if (E >= 23) {
-        result = M << (E - 23);
+    /* compute integer magnitude */
+    if (E > 23) {
+        /* E-23 in range 1..8 when E<=31 -> safe left shift */
+        uresult = M << (E - 23);
     } else {
-        result = M >> (23 - E);
+        /* 23-E in range 0..23 -> safe right shift */
+        uresult = M >> (23 - E);
     }
 
+    /* special-case exact -2^31 possibility when E==31 */
+    if (E == 31) {
+        if (sign == 0u) {
+            return 0x80000000u;
+        }
+        if (M != (1u << 23)) {
+            return 0x80000000u;
+        }
+        /* else fall through: exact -2^31 */
+    }
+
+    result = uresult;
     if (sign) {
-        /* convert to two's complement negative */
         result = -result;
     }
     return result;
 }
+
+
 
 
 /* 
@@ -260,48 +281,58 @@ int floatFloat2Int(unsigned uf) {
  *   Max ops: 30
  *   Rating: 4
  */
+/* dlc-friendly unsigned floatInt2Float (all declarations first, C-style comments) */
+/* dlc-friendly unsigned floatInt2Float (no casts, fewer operators) */
+/* Compact dlc-friendly unsigned floatInt2Float
+ * - No casts
+ * - Declarations first
+ * - Reduced temporaries to lower operator count
+ */
+/* dlc-friendly unsigned floatInt2Float (no casts, reduced operators) */
+/* tighter dlc-friendly unsigned floatInt2Float */
+/* Reduced-operator, dlc-friendly unsigned floatInt2Float
+ * - No casts
+ * - Declarations first
+ * - Compact expressions to reduce operator count
+ */
+/* Further reduced-operator unsigned floatInt2Float */
 unsigned floatInt2Float(int x) {
+    unsigned ux, sign, mant, exp, rem;
+    int msb, E, shift;
+
     if (x == 0) return 0u;
 
-    unsigned ux = x;
-  unsigned sign = 0u;
-  if (x < 0) {
-    sign = 1u;
-    ux = -ux; // unsigned negation avoids signed overflow for INT_MIN
-  }
+    sign = 0u;
+    ux = x;
+    if (x < 0) { sign = 1u; ux = -ux; }
 
-  // find index of most significant 1 bit
-  int msb = 31;
-  while (((ux >> msb) & 1u) == 0u) msb--;
+    msb = 31;
+    while ((ux >> msb) == 0u) msb--;
 
-  int E = msb;               // unbiased exponent (position of MSB)
-    unsigned exp = E + 127; // biased exponent
+    E = msb;
+    exp = E + 127u;
 
-  unsigned mant; // will hold the 23-bit fraction (with possible temporary extra bit for rounding)
-  if (E > 23) {
-    int shift = E - 23;
-    unsigned extra_mask = (1u << shift) - 1u;
-    unsigned extra = ux & extra_mask;      // bits that will be shifted out (used for rounding)
-    mant = ux >> shift;                    // top 24.. bits (may include implicit 1 at bit 23)
-    unsigned half = 1u << (shift - 1);     // halfway point for rounding
-
-    // round-to-even: increment mantissa if remainder > half, or equal to half and mant LSB is 1
-    if ((extra > half) || (extra == half && (mant & 1u))) {
-      mant++;
-      // handle mantissa overflow (e.g., 0b1_111... -> needs exponent increment)
-      if (mant == (1u << 24)) {
-        mant >>= 1;
-        exp++;
-      }
+    if (E > 23) {
+        shift = E - 23;
+        rem = ux & ((1u << shift) - 1u);
+        mant = ux >> shift;
+        /* round-to-even compacted: increment when rem > half OR rem == half && LSB==1
+           expressed as (rem + (mant&1) > half) to save operators */
+        if (rem + (mant & 1u) > (1u << (shift - 1))) {
+            mant = mant + 1u;
+            if (mant & (1u << 24)) { mant = mant >> 1; exp = exp + 1u; }
+        }
+    } else {
+        mant = ux << (23 - E);
     }
-  } else {
-    // shift left to fill fraction bits when integer fits without truncation
-    mant = ux << (23 - E);
-  }
 
-  mant &= 0x7FFFFFu; // keep low 23 bits
-  return (sign << 31) | (exp << 23) | mant;
+    mant = mant & 0x7FFFFFu;
+    return (sign << 31) | (exp << 23) | mant;
 }
+
+
+
+
 /* 
  * floatIsEqual - Compute f == g for floating point arguments f and g.
  *   Both the arguments are passed as unsigned int's, but
@@ -583,62 +614,51 @@ unsigned floatScale4(unsigned uf) {
  * Follows IEEE-754 single-precision bit encoding.
  */
 unsigned floatScale64(unsigned uf) {
-    const unsigned SIGN_MASK = 0x80000000u;
-    const unsigned EXP_MASK  = 0x7F800000u;
-    const unsigned FRAC_MASK = 0x007FFFFFu;
-    const unsigned INF_BITS  = 0x7F800000u;
+    unsigned SIGN_MASK = 0x80000000u;
+    unsigned EXP_MASK  = 0x7F800000u;
+    unsigned FRAC_MASK = 0x007FFFFFu;
+    unsigned INF_BITS  = 0x7F800000u;
 
-    unsigned sign = uf & SIGN_MASK;
-    unsigned exp  = (uf & EXP_MASK) >> 23;
-    unsigned frac = uf & FRAC_MASK;
+    unsigned sign;
+    unsigned exp;
+    unsigned frac;
+    unsigned shifted;
+    unsigned extra_count;
 
-    /* NaN or infinity -> return argument unchanged */
-    if (exp == 0xFF) return uf;
+    sign = uf & SIGN_MASK;
+    exp  = (uf & EXP_MASK) >> 23;
+    frac = uf & FRAC_MASK;
 
-    /* zero (including -0) -> unchanged */
-    if (exp == 0 && frac == 0) return uf;
+    if (exp == 0xFFu) return uf;
+    if (exp == 0u && frac == 0u) return uf;
 
-    if (exp == 0) {
-        /* denormal: multiply fraction by 2^6 */
-        unsigned shifted = frac << 6;
-
-        if (shifted == 0) {
-            /* still zero */
-            return sign | 0;
-        }
-
-        /* if highest bit now at or above bit 23, we must normalize */
+    if (exp == 0u) {
+        shifted = frac << 6;
+        if (shifted == 0u) return sign;
         if (shifted >= (1u << 23)) {
-            /* find index of highest set bit (msb) in shifted */
-            int msb = 31;
-            while (msb >= 0 && ((shifted >> msb) & 1u) == 0) msb--;
-            /* msb >= 23 here */
-            unsigned extra = msb - 23;          /* how many places above 23 */
-            exp = 1 + extra;                     /* exponent field to set */
-            if (exp >= 0xFF) {
-                /* overflow to infinity */
-                return sign | INF_BITS;
+            extra_count = 0u;
+            while (shifted >= (1u << 24)) {
+                shifted = shifted >> 1;
+                extra_count = extra_count + 1u;
             }
-            /* right-shift to put highest 1 into bit 23, then drop implicit 1 */
-            frac = (shifted >> extra) & FRAC_MASK;
+            /* now highest 1 is at bit 23; set exponent = 1 + extra_count */
+            exp = 1u + extra_count;
+            if (exp >= 0xFFu) return sign | INF_BITS;
+            frac = shifted & FRAC_MASK;
         } else {
-            /* still denormal */
-            exp = 0;
+            exp = 0u;
             frac = shifted;
         }
     } else {
-        /* normalized: add 6 to exponent, check overflow */
-        unsigned new_exp = exp + 6;
-        if (new_exp >= 0xFF) {
-            /* overflow -> infinity */
-            return sign | INF_BITS;
-        }
+        unsigned new_exp = exp + 6u;
+        if (new_exp >= 0xFFu) return sign | INF_BITS;
         exp = new_exp;
-        /* frac unchanged */
     }
 
     return sign | (exp << 23) | frac;
 }
+
+
 
 
 /* 
@@ -651,46 +671,49 @@ unsigned floatScale64(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatUnsigned2Float(unsigned u) {
-    if (u == 0) return 0;           // zero → zero
+    unsigned sign = 0;
+    unsigned exp, frac, pos;
+    unsigned mask, rest, half;
 
-    unsigned sign = 0;              // unsigned → always positive
-    unsigned msb = 31;
+    if (u == 0)
+        return 0;
 
-    // Find highest set bit (position of integer’s MSB)
-    while (((u >> msb) & 1) == 0) msb--;
+    /* find highest bit pos (0–31) */
+    pos = 31;
+    while ((u & (1 << pos)) == 0)
+        pos--;
 
-    // Exponent = bias + msb
-    unsigned exp = msb + 127;
+    /* exponent = pos + bias (127) */
+    exp = pos + 127;
 
-    unsigned frac;
-
-    if (msb <= 23) {
-        // Fits exactly in the fraction field
-        frac = (u << (23 - msb)) & 0x7FFFFF;
+    /* shift u left so that MSB is at bit 31 */
+    /* then extract fraction bits from the next 23 bits */
+    if (pos <= 23) {
+        frac = (u << (23 - pos)) & 0x7FFFFF;
     } else {
-        // Need to round because the integer is too large for 23 bits
-        unsigned shift = msb - 23;
-        unsigned dropped = u & ((1u << shift) - 1);   // bits that will be cut off
-        unsigned frac_base = u >> shift;              // top 24 bits (including leading 1)
+        unsigned shift = pos - 23;
+        unsigned shifted = u >> shift;
+        frac = shifted & 0x7FFFFF;
 
-        frac = frac_base & 0x7FFFFF;                  // remove implicit 1
+        /* round-to-even */
+        
+        mask = (1 << shift) - 1;
+        rest = u & mask;
+        half = 1 << (shift - 1);
 
-        // --- Round-to-even -----------------------------------------
-        int round = 0;
-        unsigned halfway = 1u << (shift - 1);
-
-        if (dropped > halfway) round = 1;                // greater than half
-        else if (dropped == halfway && (frac & 1)) round = 1;  // tie → round-to-even
-
-        if (round) {
+        if (rest > half || (rest == half && (frac & 1)))
             frac++;
-            if (frac == 0x800000) {  // overflow from rounding
-                exp++;
-                frac = 0;
-            }
+        
+        if (frac >> 23) { /* overflow rounding */
+            exp++;
+            frac &= 0x7FFFFF;
         }
     }
 
     return (sign) | (exp << 23) | frac;
 }
+
+
+
+
 
