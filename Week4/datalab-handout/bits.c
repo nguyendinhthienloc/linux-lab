@@ -523,29 +523,27 @@ unsigned floatScale1d2(unsigned uf) {
  */
 unsigned floatScale2(unsigned uf) {
     unsigned sign = uf & 0x80000000;
-    unsigned exp  = (uf >> 23) & 0xFF;
-    unsigned frac = uf & 0x7FFFFF;
+    unsigned exp = (uf>>23) & 0xFF;
+    unsigned frac = uf & 0x007FFFFF;
 
-    /* NaN or infinity → return unchanged */
-    if (exp == 0xFF) {
+    if (exp == 0xFF){
         return uf;
     }
 
-    /* Denormalized: exponent = 0, just scale mantissa */
-    if (exp == 0) {
-        frac <<= 1;
+    if (exp == 0){ 
+        frac = frac << 1; 
         return sign | frac;
+
     }
-
-    /* Normalized: bump the exponent */
-    exp++;
-
-    /* Overflow to infinity */
-    if (exp == 0xFF) {
-        return sign | 0x7F800000;
+    else {
+        exp++;
     }
-
-    return sign | (exp << 23) | frac;
+    if (exp == 0xFF){ 
+        return sign | 0x7F800000; 
+    }
+    else {
+        return sign | (exp << 23) | frac; 
+    }
 }
 
 /* 
@@ -560,41 +558,43 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatScale4(unsigned uf) {
-    unsigned sign = uf & 0x80000000u;
-    unsigned exp  = (uf >> 23) & 0xFFu;
-    unsigned frac = uf & 0x7FFFFFu;
+    int i;
+    for (i = 0; i < 2; i++) {
+        // --- Start of Scale2 Logic ---
+        unsigned sign = uf & 0x80000000;
+        unsigned exp = (uf >> 23) & 0xFF;
+        unsigned frac = uf & 0x007FFFFF;
 
-    /* NaN or infinity -> unchanged */
-    if (exp == 0xFFu) return uf;
-
-    /* Denormalized: shift fraction left by 2; may become normalized */
-    if (exp == 0u) {
-        unsigned shifted = frac << 2; /* up to bit 24 set */
-
-        if (shifted & (1u << 24)) {
-            /* bit 24 set -> normalize by shifting right 1, exponent = 2 */
-            unsigned new_exp = 2u; /* biased exponent field = 2 */
-            unsigned new_frac = (shifted >> 1) & 0x7FFFFFu;
-            return sign | (new_exp << 23) | new_frac;
-        } else if (shifted & (1u << 23)) {
-            /* bit 23 set -> normalize, exponent = 1 */
-            unsigned new_exp = 1u;
-            unsigned new_frac = shifted & 0x7FFFFFu;
-            return sign | (new_exp << 23) | new_frac;
-        } else {
-            /* still denormal */
-            return sign | shifted;
+        // Case 1: NaN or Infinity - Break early or just continue (it won't change)
+        if (exp == 0xFF) {
+            return uf;
         }
-    }
 
-    /* Normalized: add 2 to exponent, check overflow */
-    if (exp + 2u >= 0xFFu) {
-        return sign | 0x7F800000u; /* overflow -> ±infinity */
+        // Case 2: Denormalized
+        if (exp == 0) {
+            // We shift frac left by 1.
+            // If the MSB was 1, it spills into the exponent field (bit 23).
+            // When we reconstruct 'uf' below, that bit becomes the exponent!
+            frac = frac << 1; 
+            uf = sign | frac; 
+        }
+        // Case 3: Normalized
+        else {
+            exp++;
+            if (exp == 0xFF) {
+                uf = sign | 0x7F800000; // Become Infinity
+            } else {
+                uf = sign | (exp << 23) | frac; // Reassemble
+            }
+        }
+        // --- End of Scale2 Logic ---
+        
+        // 'uf' is now updated (x2). 
+        // The loop runs again, using this new 'uf' as input.
     }
-    exp += 2u;
-    return sign | (exp << 23) | frac;
+    
+    return uf;
 }
-
 
 
 
@@ -613,49 +613,43 @@ unsigned floatScale4(unsigned uf) {
  * Multiply floating-point value by 64 (bit-level).
  * Follows IEEE-754 single-precision bit encoding.
  */
-unsigned floatScale64(unsigned uf) {
-    unsigned SIGN_MASK = 0x80000000u;
-    unsigned EXP_MASK  = 0x7F800000u;
-    unsigned FRAC_MASK = 0x007FFFFFu;
-    unsigned INF_BITS  = 0x7F800000u;
+unsigned floatScale64(unsigned uf){
+    int i;
+    for (i = 0; i < 6; i++) {
+        // --- Start of Scale2 Logic ---
+        unsigned sign = uf & 0x80000000;
+        unsigned exp = (uf >> 23) & 0xFF;
+        unsigned frac = uf & 0x007FFFFF;
 
-    unsigned sign;
-    unsigned exp;
-    unsigned frac;
-    unsigned shifted;
-    unsigned extra_count;
-
-    sign = uf & SIGN_MASK;
-    exp  = (uf & EXP_MASK) >> 23;
-    frac = uf & FRAC_MASK;
-
-    if (exp == 0xFFu) return uf;
-    if (exp == 0u && frac == 0u) return uf;
-
-    if (exp == 0u) {
-        shifted = frac << 6;
-        if (shifted == 0u) return sign;
-        if (shifted >= (1u << 23)) {
-            extra_count = 0u;
-            while (shifted >= (1u << 24)) {
-                shifted = shifted >> 1;
-                extra_count = extra_count + 1u;
-            }
-            /* now highest 1 is at bit 23; set exponent = 1 + extra_count */
-            exp = 1u + extra_count;
-            if (exp >= 0xFFu) return sign | INF_BITS;
-            frac = shifted & FRAC_MASK;
-        } else {
-            exp = 0u;
-            frac = shifted;
+        // Case 1: NaN or Infinity - Break early or just continue (it won't change)
+        if (exp == 0xFF) {
+            return uf;
         }
-    } else {
-        unsigned new_exp = exp + 6u;
-        if (new_exp >= 0xFFu) return sign | INF_BITS;
-        exp = new_exp;
-    }
 
-    return sign | (exp << 23) | frac;
+        // Case 2: Denormalized
+        if (exp == 0) {
+            // We shift frac left by 1.
+            // If the MSB was 1, it spills into the exponent field (bit 23).
+            // When we reconstruct 'uf' below, that bit becomes the exponent!
+            frac = frac << 1; 
+            uf = sign | frac; 
+        }
+        // Case 3: Normalized
+        else {
+            exp++;
+            if (exp == 0xFF) {
+                uf = sign | 0x7F800000; // Become Infinity
+            } else {
+                uf = sign | (exp << 23) | frac; // Reassemble
+            }
+        }
+        // --- End of Scale2 Logic ---
+        
+        // 'uf' is now updated (x6). 
+        // The loop runs again, using this new 'uf' as input.
+    }
+    
+    return uf;
 }
 
 
