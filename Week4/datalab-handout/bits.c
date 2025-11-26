@@ -538,7 +538,7 @@ unsigned floatScale2(unsigned uf) {
     else {
         exp++;
     }
-    if (exp == 0xFF){ 
+    if (exp >= 0xFF){ 
         return sign | 0x7F800000; 
     }
     else {
@@ -581,7 +581,7 @@ unsigned floatScale4(unsigned uf) {
         // Case 3: Normalized
         else {
             exp++;
-            if (exp == 0xFF) {
+            if (exp >= 0xFF) {
                 uf = sign | 0x7F800000; // Become Infinity
             } else {
                 uf = sign | (exp << 23) | frac; // Reassemble
@@ -637,7 +637,7 @@ unsigned floatScale64(unsigned uf){
         // Case 3: Normalized
         else {
             exp++;
-            if (exp == 0xFF) {
+            if (exp >= 0xFF) {
                 uf = sign | 0x7F800000; // Become Infinity
             } else {
                 uf = sign | (exp << 23) | frac; // Reassemble
