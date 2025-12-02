@@ -1,3 +1,7 @@
 Why make trillions when we could make... billions?
 1 2 4 8 16 32
 0 -357
+2 13 DrEvil
+57830=
+5 6 3 2 4 1
+35
