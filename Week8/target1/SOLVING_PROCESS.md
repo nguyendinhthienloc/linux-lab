@@ -28,7 +28,7 @@ I created a payload with 40 bytes of padding followed by the address of `touch1`
 
 ![Phase 1 Proof](proof/phase1.png)
 
-Payload: [ctarget.l1.txt](ctarget.l1.txt)
+Payload: [ctarget.l1.txt](solutions/ctarget.l1.txt)
 
 ### Phase 2: Injecting Code
 
@@ -60,7 +60,7 @@ The opcode for this is `bf fa 97 b9 59 c3`.
 
 ![Phase 2 Proof](proof/phase2.png)
 
-Payload: [ctarget.l2.txt](ctarget.l2.txt)
+Payload: [ctarget.l2.txt](solutions/ctarget.l2.txt)
 
 ### Phase 3: String Injection
 
@@ -91,7 +91,7 @@ I wrote assembly to pass this address to `touch3`:
 
 ![Phase 3 Proof](proof/phase3.png)
 
-Payload: [ctarget.l3.txt](ctarget.l3.txt)
+Payload: [ctarget.l3.txt](solutions/ctarget.l3.txt)
 
 ---
 
@@ -118,7 +118,7 @@ I needed to pop my cookie into `%rdi`. I couldn't find `pop %rdi`, so I used a t
 
 ![Phase 4 Proof](proof/phase4.png)
 
-Payload: [rtarget.l2.txt](rtarget.l2.txt)
+Payload: [rtarget.l2.txt](solutions/rtarget.l2.txt)
 
 ### Phase 5: ROP Level 3
 
@@ -150,7 +150,7 @@ I placed the string at the end of the payload. The offset from the stack pointer
 
 ![Phase 5 Proof](proof/phase5.png)
 
-Payload: [rtarget.l3.txt](rtarget.l3.txt)
+Payload: [rtarget.l3.txt](solutions/rtarget.l3.txt)
 
 ## Solution Log
 
